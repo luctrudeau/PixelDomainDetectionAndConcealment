@@ -1,0 +1,494 @@
+\documentclass{article}
+\usepackage{spconf,amsmath,amsfonts,amssymb}
+%\interdisplaylinepenalty=2500
+
+%% Accents Français pour le nom de l'école
+\usepackage[utf8]{inputenc}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{pifont} % pour certains dingbats
+\usepackage[normalem]{ulem} % pour strike
+\usepackage{setspace} % pour spacing
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+%\usepackage{natbib}
+% http://en.wikibooks.org/wiki/LaTeX/Hyperlinks
+\hypersetup{
+    colorlinks=true,    % false: boxed links; true: colored links
+    linkcolor=blue,    % color of internal links
+    citecolor=blue,    % color of links to bibliography
+    filecolor=blue,    % color of file links
+    urlcolor=blue      % color of external links
+}
+
+\newcommand{\ltCodec}{H.264/AVC JM reference software}
+
+% petite macro pour marquer les points
+% a completer.
+\newcommand{\fillme}[1]{\ding{118}}
+%\renewcommand{\sout}[1]{} % uncomment to hide \sout text
+
+
+\title{Pixel Domain Referenceless Visual Degradation Detection\\
+and Error Concealment for Mobile Video}
+
+%% sneaky baseline stretch
+\renewcommand{\baselinestretch}{0.925}
+
+\begin{document}
+
+% allow more graphics in a page/column
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.5}
+
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.9}
+
+%% sets aggressive hyphenation
+\hyphenpenalty=-100
+\tolerance=2000
+%% controls in-line spacing
+\pretolerance=200
+\setlength{\emergencystretch}{1em}
+%% sets only one space after .
+\frenchspacing
+%% less space after/before figures
+%\setlength{\textfloatsep}{0.5em}
+
+\setlength{\abovedisplayskip}{0.6em plus 0.5em}
+\setlength{\belowdisplayskip}{0.6em plus 0.5em}
+%\setlength{\parskip}{0em plus 1em minus 0.25em}
+
+\name{Luc Trudeau, Stéphane Coulombe, Steven Pigeon\thanks{\scriptsize This
+work was supported in part by the Natural Sciences and Engineering Research
+Council of Canada under research grant \#356807-07, and in part by
+\textit{Le Fonds québécois de la recherche sur la nature et les
+technologies} (FQRNT) under research grant \#141698. Emails:
+luc.trudeau.1@ens.etsmtl.ca, \{stephane.coulombe,
+steven.pigeon\}@etsmtl.ca}} \address{Department of Software and IT
+Engineering\\ École de technologie supérieure, Université du
+Québec\\ Montréal, Québec, Canada}
+
+\maketitle
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ABSTRACT %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{spacing}{0.9}
+\begin{abstract}
+\small In mobile video applications, where unreliable networks are
+commonplace, corrupted video packets can have a profound impact on the
+quality of the user experience. In this paper, we show that, in a wide
+range of operating conditions, selectively reusing data resulting from
+decodable errorneous packets leads to better results than frame copy. This
+selection is guided by a novel concept that combines motion estimation
+and a measure of blocking artifacts at block edges to predict visual
+degradation caused by the decoding of erroneous packets. Simulation results
+show that, by using the proposed solution, the \ltCodec{} decoder can
+select the best option between frame copy and the erroneous frame decoding in
+82\% of test cases. We also obtain an average gain of 1.95 dB for concealed 
+frames (when they differ from those concealed by the JM decoder).
+\end{abstract}
+
+\begin{keywords}
+\small Error concealment, error detection, H.264, mobile video, pixel domain
+\end{keywords}
+\end{spacing}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% INTRO %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{section}{Introduction}
+\label{section-introduction}
+The capabilities of modern video coding standards like H.264 have paved the
+way for new consumer market video applications, such as video conferencing,
+video telephony, and video streaming over wireless networks using mobile
+devices. Operating conditions in wireless networks are far from ideal for
+video applications. These network media are unreliable and data loss is
+unavoidable, which increases the complexity of video-based applications
+that must recover from the error either by retransmission or by
+concealment. These limitations must be addressed to ensure the success of
+wireless video applications.
+
+The impracticality of retransmission in live video makes error
+concealment the preferred method of error recovery~\cite{Wang1998}. Error
+concealment approaches were developed to improve the perceived quality of
+decoded sequences that have been subject to packet corruption over
+unreliable networks. However, error concealment algorithms will either
+conceal the whole slice~\cite{Wu-ISCAS-2006}, or perform block-level
+concealment~\cite{OBMA}. The latter requires knowledge of erroneous blocks
+in the corrupted frame~\cite{Wang1998}.
+
+In H.264, slices are independently decodable groups of blocks. When an erroneous
+packet is discarded at the network level, the corresponding slice is lost, even
+if the blocks preceding the error are valid or if the visual impairment
+resulting from the error is minor. However, in the context of mobile
+applications, where bit rates are low and resolutions small, dropping a packet
+entails losing critical parts of a frame, and in some cases the entire frame.
+Even with state-of-the-art error concealment approaches, this may leads to 
+significant visual degradation which will propagate in subsequent frames.
+
+In~\cite{Superiori2007}, Superiori \textit{et al.} have shown that using
+information from \emph{decodable} (i.e. decoding them will not crash the 
+decoder)
+erroneous packets can yield beneficial results.
+However, reusing erroneous packets can lead to the following artifacts:
+spatially shifted blocks, inverse DCT related noise, empty blocks (green or
+black), or frame freeze, the effects of which depend on the decoder used.
+
+In cases where corrupted bit streams are decodable, the information they
+contain, even if it is damaged, once analyzed by the proposed detection 
+approach,
+could be beneficial in guiding decisions made by a concealment module for 
+either 
+a whole slice concealment method (currently what is avaible in the \ltCodec{} 
+decoder, 
+and will be presented in this work) or for a block level concealment approach 
+such as the recent findings on outer boundary matching algorithms~\cite{OBMA}.
+The term ``slice concealment'' describes a family of concealment algorithms 
+that conceal the whole slice, such as frame copy and motion 
+copy~\cite{Wu-ISCAS-2006}.
+
+This paper is organized as follows. In 
+section~\ref{section-motion-compensated-blockiness}, we propose a solution,
+based on the novel concept of motion-compensated blockiness, to identify
+visually degraded regions in predicted (P) frames caused by damaged, but 
+decodable,
+packets. The proposed detection process is intended for block-based codecs.
+It operates in the pixel domain and is independent of decoder-specific
+information, such as block size or bitrate. 
+Section~\ref{section-selective-slice-concealment} presents the
+concept of selective slice concealment, a low-complexity add-on to modern
+decoders where motion-compensated blockiness is used to perform referenceless
+visual degradation detection to guide the choice between using a slice
+concealment candidate or the erroneous slice when concealing a corrupted frame.
+In section~\ref{section-experimental-results}, we present the experimental 
+results of our proposed error detection and concealment solution using H.264, 
+and we present our conclusions in section~\ref{section-conclusion}.
+\end{section}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% MOTION COMPENSATED BLOCKINESS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newcommand{\ltSlice}[1]{\mathbf{S}_{#1}}
+\newcommand{\ltF}[1]{\mathbf{F}_{#1}}
+\newcommand{\ltP}[1]{\mathbf{P}_{#1}}
+\newcommand{\ltD}[1]{\mathbf{D}_{#1}}
+\newcommand{\ltI}[1]{\mathbf{I}_{#1}}
+\newcommand{\ltR}[1]{\mathbf{R}_{#1}}
+\newcommand{\ltB}[1]{\mathbf{B}_{#1}}
+\newcommand{\ltS}[1]{\mathcal{I}_{#1}}
+\newcommand{\ltErr}[1]{\mathbf{\hat{F}}_{#1}}
+\newcommand{\ltConc}[1]{\mathbf{F^{\prime}}_{#1}}
+\newcommand{\ltOpt}[1]{\mathbf{F^{*}}_{#1}}
+
+\newcommand{\ltMIN}[1]{\arg \min_{#1}}
+
+\newcommand{\ltCB}[2]{\mathbf{b}_{#1}(#2)}
+\newcommand{\ltBor}[1]{\mathcal{#1}}
+\newcommand{\lttBLK}[2]{\textrm{MCB}_{#1}(#2)}
+\newcommand{\ltSTBLK}[1]{\textrm{SMCB}(#1)}
+\newcommand{\ltBV}[1]{\mathbf{BV}_{#1}}
+
+\newcommand{\ltSAD}[1]{\textrm{SAD}(#1)} 
+
+\begin{section}{Motion-Compensated Blockiness}
+\label{section-motion-compensated-blockiness} % if ever needed
+It is a known fact that a corrupted bit stream can desynchronize a decoder. 
+This will often break the spatial pixel correlation in frame content at the 
+block boundaries. Blockiness, a measure of the visibility of blocking 
+artifacts, 
+is a predominant feature of the visual impairment caused by decoder
+desynchronization~\cite{Superiori2007}. In~\cite{Superiori2007} 
+and~\cite{Ikuno2007}, the authors present a no-reference
+visual impairment detection method based on 
+\begin{equation*}
+\label{eq-FrameSub}
+\ltD{} = | \ltF{} - \ltP{} |\:,
+\end{equation*}
+the absolute frame difference, computed pixel by pixel 
+\mbox{$\left(\textrm{i.e.~} \ltD{x,y}\!=\!\left| \ltF{x,y} - \ltP{x,y} 
+\right|\right)$}, 
+between the current frame $\ltF{}$ and the previous frame $\ltP{}$, 
+assuming that the previous frame is error-free.
+
+To identify visual degradation caused by decoder desynchronization, Ikuno
+\textit{et al.}~\cite{Ikuno2007} measure the block energy and blockiness found 
+in frame $\ltD{}$. Values exceeding a certain threshold are considered
+erroneous. These results are refined with more sophisticated follow-up
+techniques, such as voting~\cite{Superiori2007,Ikuno2007} or support vector
+machines~\cite{Farrugia2008}.
+
+These refinements are required because $\ltD{}$ is not a reliable source of
+error detection, as it will falsely detect energy originating from changes 
+between $\ltF{}$ and $\ltP{}$, or blockiness inherent in the content of 
+$\ltF{}$ that occurs at block boundaries. Thus, we propose a novel approach in
+which the absolute difference is replaced with the motion-compensated
+residual absolute difference.
+
+Let $B\times{}B$ be the block size, $H$ and $W$ the height and width of the
+frame respectively, with intervals \mbox{$\ltS{m}\!=\![0,\frac{W}{B}-1]$}
+and \mbox{$\ltS{n}\!=\![0,\frac{H}{B}-1]$}, and $p$ the half-width of the
+motion search area. The optimal vector for motion estimation, between
+$\ltF{}$ and $\ltP{}$ for a block at block coordinates ($m,n$) is given by
+\begin{multline}
+\label{eq-Vectors}
+\hspace{-1em}(\mathbf{U}_{m,n}, \mathbf{V}_{m,n}) = \arg\hspace{-5pt}\min_{\vphantom{\big|}(u,v) \in K} \hspace{-5pt}\ltSAD{\ltF{\!}, 
+\ltP{\!}, mB, nB, u, v} \:,
+\end{multline} where $K = [-p,p] \times [-p, p]$,  $m \in \ltS{m}$, $n \in
+\ltS{n}$ and
+\begin{equation*}
+\ltSAD{\ltF{\!}, \ltP{\!}, x,y,u,v}\!=\!\sum_{q=0}^{B-1}\sum_{r=0}^{B-1} \left| 
+\ltF{x{\scriptscriptstyle +}q,y{\scriptscriptstyle +}r}\!-\!\ltP{x{\scriptscriptstyle +}q{\scriptscriptstyle +}u,y{\scriptscriptstyle +}r{\scriptscriptstyle +}v} \right|\:.
+\end{equation*}
+
+$\mathbf{U}$ and $\mathbf{V}$ are matrices of motion vector components
+(horizontal and vertical respectively) resulting from the motion search of
+each block of a frame. Considering motion in the error detection process 
+can significantly reduce false error detection by compensating for motion between $\ltF{}$ and $\ltP{}$.
+However, motion compensation will not detect errors related to content
+contained in both the current and the previous frames (e.g. corrupted
+motion vectors yield blocks in $\ltF{}$ that are contained in $\ltP{}$, yet
+often exhibit strong blocking artifacts). To detect these errors, we
+measure the blockiness of residual blocks resulting from motion estimation.
+We refer to this measure as motion-compensated blockiness~(MCB) and define
+it as
+\begin{equation*}
+\begin{split}
+\textrm{M}&\textrm{CB}_{d}(\ltF{\!},\ltP{\!}, m,n)=\\&\!\!\sum_{l = 0}^{B-1} | \ltCB{d,l}{\ltF{\!\!},m B\!,n
+B}\!-\!\ltCB{d, l}{\ltP{\!\!},m B{\scriptsize +}\mathbf{U}_{m, n}, n
+B{\scriptsize +}\mathbf{V}_{m, n}} |\:,
+\end{split}
+\end{equation*}
+\noindent{}for each boundary $d \in \mathcal{B}$, with 
+\mbox{$\mathcal{B}\!=\!\{\ltBor{N}, \ltBor{E}, \ltBor{S}, \ltBor{W}\}$} and
+\mbox{$m \in \ltS{m}$}, \mbox{$n \in \ltS{n}$}. $\mathbf{U}$
+and $\mathbf{V}$ are given by eq.~\eqref{eq-Vectors}. The blockiness vectors
+$\mathbf{b}_{d, l}$ of all four block boundaries are as follows:
+\begin{align*}
+\ltCB{\ltBor{N}, l}{\ltF{}, x,y} &= \ltF{x+l,y} - \ltF{x+l,y-1}\:, \\
+\ltCB{\ltBor{E}, l}{\ltF{}, x,y} &= \ltF{x+B,y+l} - \ltF{x+B-1,y+l}\:, \\
+\ltCB{\ltBor{S}, l}{\ltF{}, x,y} &= \ltF{x+l,y+B} - \ltF{x+l,y+B-1}\:, \\
+\ltCB{\ltBor{W}, l}{\ltF{}, x,y} &= \ltF{x,y+l} - \ltF{x-1,y+l}\:,
+\end{align*}
+with $l \in [0, B-1]$, and where $(x,y)$ are the pixel coordinates of the block.
+Note that this measure is different than what is proposed in~\cite{OBMA}, where
+only external borders are being matched.
+
+The sum of motion-compensated blockiness ($\textrm{SMCB}$) of a block, at block
+coordinates $(m,n)$ along its borders $d \in \mathcal{B}$, is given by
+\begin{equation*}
+\label{eq-SumTB}
+\ltSTBLK{\ltF{},\ltP{}, m,n} =
+\sum_{d\:\in\:\mathcal{B}}\lttBLK{d}{\ltF{},\ltP{},m,n}\:.
+\end{equation*}
+
+There remains one significant source of false detection when measuring 
+$\textrm{MCB}$: blocking artifacts are accounted for in the two blocks that
+share a blocky edge. To address this issue, we propose a blockiness distribution
+algorithm which assigns the $\textrm{MCB}_d$ of each block boundary to the
+adjacent block with the highest $\textrm{SMCB}$.
+
+The blockiness distribution algorithm is applied, in decreasing order of
+$\ltSTBLK{\ltF{},\ltP{},m,n}$, to all blocks with 
+\mbox{$\ltSTBLK{\ltF{},\ltP{},m,n} 
+\!\geqslant\!T_b$}, where $T_b$
+is the threshold that determines whether or not an edge is considered blocky.
+This threshold is further discussed in 
+section~\ref{section-experimental-results}.
+At the end of the process, the motion-compensated blockiness,
+$\textrm{MCB}$, of each blocky edge is assigned to a single block. This yields 
+$\textrm{SDMCB}(\ltF{},\ltP{},m,n)$, the sum of distributed motion-compensated 
+blockiness. 
+\end{section}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SELECTIVE SLICE CONCEALMENT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\vspace{-0.5em}\begin{section}{Selective Slice Concealment} \vspace{-0.5em}
+\newcommand{\ltSDMCB}[1]{\textrm{SDMCB}(#1,\ltP{},m,n)}
+\label{section-selective-slice-concealment} % if ever needed
+When decoding corrupted bit streams with the \ltCodec{} decoder~\cite{JM}, we
+discovered that a considerable number (up to 44\% based on our simulations) of 
+the resulting erroneous frames $\ltErr{}$ exhibited a higher PSNR than 
+the 
+concealment candidate $\ltConc{}$, resulting from a whole slice
+concealment approach used by the decoder. The PSNR being, in both cases, 
+relative to the reference frame
+$\ltF{0}$ (i.e. relative to the original uncompressed frame from which $\ltF{}$ 
+was encoded).
+
+Furthermore, we observed that flexible macroblock ordering and separating frames
+into multiple slices will contribute to increase the number of frames 
+$\ltErr{}$ with higher PSNR than $\ltConc{}$. Based on these 
+observations,
+we propose a selective slice concealment approach. Motion-compensated
+blockiness is used to guide the decoder to decide whether to conceal a slice or
+to use the erroneous data when available. 
+
+When an error is detected at the transport layer and the decoder is about to 
+apply a concealment, if the erroneous frame is available, instead of dropping 
+it, we perform a selective slice concealment. This is done by evaluating the 
+SDMCB of both the concealment candidate
+\begin{equation*}
+\label{eq-ConcealmentCandidate}
+c_c=\sum_{m=0}^{\frac{W}{B}-1}\sum_{n=0}^{\frac{H}{B}-1}\ltSDMCB{\ltConc}\:,
+\end{equation*}
+and the erroneous frame
+\begin{equation*}
+\label{eq-ErroneousCandidate}
+c_e=\sum_{m=0}^{\frac{W}{B}-1}\sum_{n=0}^{\frac{H}{B}-1}\ltSDMCB{\ltErr}\:,
+\end{equation*}
+in order to determine the optimal concealment
+\begin{equation*}
+\label{eq-SelectiveConcealment}
+\ltOpt =
+\begin{cases}
+\ltErr{}, & \mathrm{if~} c_e < c_c\\
+\ltConc{}, & \mathrm{otherwise}
+\end{cases}\:.
+\end{equation*}
+\end{section}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% EXPERIMENTAL RESULTS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\vspace{-1.5em}\begin{section}{Experimental Results}
+\label{section-experimental-results}
+Using version 16.2 of the \ltCodec~\cite{JM}, we built a dataset of video
+subsequences composed of 3 consecutive frames, starting with an I frame followed
+by P frames (IPP) extracted from a random starting point. This was repeated 5 
+times for each of the 17 QCIF ($176\times{}144$) reference video sequence 
+available 
+at~\cite{YUV}. These
+subsequences were encoded with fixed quantization parameters (16, 20, 24, 28)
+and exposed to bit error rates of 0.0004, 0.0008, 0.0016, and 0.0032, which
+resulted in 1360 subsequences that were used to evaluate the proposed solution.
+We only exposed the third frame (P-frame) to errors according to prescribed bit 
+error rates. Simulation results are presented with respect to this errorneous 
+frame.
+The type of flexible macroblock ordering used is dispersed, with two-slices 
+(checkerboard). 
+We used the baseline profile encoding parameters, at
+30 frames per second, with a QCIF resolution and RTP output
+format. However, RTP and NAL headers where not exposed to the errors.
+
+The block size used to measure $\textrm{MCB}$ is \mbox{$B\!=\!16$} pixels and 
+the blockiness threshold $T_b$ was set to 5000.
+
+None of the tested versions (from 15.1 to 16.2) of the \ltCodec{} decoder 
+provided a functional implementation of motion copy error
+concealment~\cite{BUG}. This fact was confirmed in several discussion forums
+on the Web. Therefore, although the proposed method could work with both
+motion copy and frame copy, we could only test frame copy.
+
+As previously stated, a significant number of erroneous slices decoded using 
+the \ltCodec{} decoder~\cite{JM} produced a higher PSNR than their frame copy
+concealment alternatives, provided that they are decodable. In 
+Fig.~\ref{fig-Decodings}, we present the measured 
+percentage of successful decodings for different operating conditions. 
+
+\begin{figure}%[htb]
+\centering
+\includegraphics[width=1\linewidth]{graphics/Decodings.pdf}\vspace{-1em}
+\caption{\small{}Percentage of successful decodings (i.e. decodable corrupted 
+frames), based on quantization 
+parameter
+(QP) and bit error rate (BER) being evenly spread over 1360 sequences.}
+\label{fig-Decodings}
+\end{figure}
+
+When the \ltCodec{} decodes a corrupt bit stream, it passes through 
+three different states. The first is the pre-error state (normal bit stream 
+decoding).
+When the first error is reached, the decoder enters a desynchronization state. 
+In this second state, unaware that the content is invalid, it inserts 
+degradation into 
+the frame. This might eventually lead to a decoding failure, at which point the 
+decoder reverts to a slice copy algorithm for the remainder of the slice.
+
+According to our observations over all our testing conditions, 44\% of
+successfully decoded erroneous slices resulted in frames with higher PSNR, if
+they had been concealed with a slice copy algorithm.
+
+Compared to frame copy, the
+PSNR of the erroneous frame is higher while the decoder remains in the first 
+state,
+than lower in the second, and equal in the third. The number of blocks decoded
+in each state, the extent of the degradation created in the second state, 
+combined with the
+changes between the current, and previous frame determine whether or not 
+a correctly decoded erroneous slice will offer a higher PSNR than a slice copy 
+concealment candidate.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{graphics/selectiveSliceCopy.pdf}\vspace{-1em}
+\caption{\small{}Comparison of selective slice copy and the slice copy 
+algorithms over
+the 1360 sequences of our test dataset.}
+\label{fig-SelectiveSliceCopy}
+\end{figure*}
+
+
+Enabling the decoder to select between slice copy and the erroneous slice is the
+basis of our proposed selective slice copy approach. With $\textrm{SDMCB}$ as
+our discriminant, we achieved the results shown in
+Fig.~\ref{fig-SelectiveSliceCopy}. Selective slice copy produced an average gain
+of 0.72~dB. In contrast, a reference-based selective algorithm (i.e. an ideal, 
+but impossible to realize, method that selects the highest PSNR value between a 
+frame copy and the erroneous frame when
+compared against $\ltF{0}$) produced an optimal result of 0.94~dB. 
+
+We observed that selective slice concealment makes an optimal choice in
+82\% of the cases (compared to the reference-based method). This allows the 
+selective decoder to outperform the
+conventional decoder in 32\% of cases, for an average gain of 1.95~dB.
+In contrast, the reference-based selective algorithm produced an optimal gain of
+2.12~dB.
+
+The histogram in Fig.~\ref{fig-FrameDistribution} indicates that selective slice
+concealment results in fewer poor concealments (\mbox{$<30$}~dB) and a larger
+number of frames for every interval over 35~dB. This means that not only
+does the proposed approach reduce the number of low-quality concealments, these
+having greater impact on the quality of the user experience, it also offers a
+higher quality concealment without requiring additional bandwidth or a 
+high-complexity algorithm.
+
+Furthermore, $\textrm{SDMCB}$'s ability to choose the favorable concealment 
+could be exploited in future works for block level concealment such as 
+\cite{OBMA}.
+The advantages are twofold, by first identifying erroneous blocks that need
+to be concealed (it has been shown that not all erroneous blocks require a 
+concealment), and second by offering a referenceless validation mechanism for 
+concealment candidates,
+as some erroneous blocks will exhibit very little visual degradation.
+\end{section}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% CONCLUSION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\vspace{-0.5em}\begin{section}{Conclusion}\vspace{-0.5em}
+\label{section-conclusion}
+In this paper, we described a novel visual degradation detection approach
+based on the sum of distributed motion-compensated blockiness,
+$\textrm{SDMCB}$. We proposed using this information for a low-complexity
+decoder add-on operation that allows the decoder to decide whether to use
+the erroneous slice or slice copy. Our simulations show interesting ratios
+of decodable sequences based on varying quantization parameters and bit
+error rates, and improved concealment results when $\textrm{SDMCB}$ is used
+to guide the decoder in selecting between the erroneous slice and applying
+frame copy. These results constitute interesting avenues for decoders,
+players, and no-reference video quality analysis tool makers.
+\end{section}
+
+\begin{figure}
+\centering
+\includegraphics[width=1\linewidth]{graphics/FrameDistribution.pdf}\vspace{-1em}
+\caption{\small{}Frame PSNR histogram, with intervals of 5~dB centered at every 
+5 dB increment after 20 dB, for 1360 erroneous frame concealments.}
+\label{fig-FrameDistribution}
+\end{figure}
+
+\vspace{-0.75em}
+\begin{spacing}{0.85} % tweak to fit
+%\footnotesize % if needed, to fit
+\bibliographystyle{IEEEbib}
+\bibliography{article}
+\end{spacing}
+
+
+
+\end{document}
