@@ -1,8 +1,8 @@
 This is the authors version of :
 
 L. Trudeau, S. Coulombe, and S. Pigeon, “[Pixel domain referenceless visual degradation
-detection and error concealment for mobile video](https://www.sharelatex.com/github/repos/luctrudeau/PixelDomainDetectionAndConcealment/builds/latest/output.pdf)” in Image Processing (ICIP), 2011 18th
-IEEE International Conference on, pp. 2229–2232, Sept 2011. [![PDF Status](https://www.sharelatex.com/github/repos/luctrudeau/PixelDomainDetectionAndConcealment/builds/latest/badge.svg)](https://www.sharelatex.com/github/repos/luctrudeau/PixelDomainDetectionAndConcealment/builds/latest/output.pdf)
+detection and error concealment for mobile video](http://espace2.etsmtl.ca/4175/1/Coulombe%20S.%202011%204175%20Pixel%20domain%20referenceless%20visual%20degradation%20detection.pdf)” in Image Processing (ICIP), 2011 18th
+IEEE International Conference on, pp. 2229–2232, Sept 2011. 
 
 ##BibTeX
 ```
